@@ -24,7 +24,6 @@
 # S1 in the paper cited above).
 
 
-import argparse
 import torch
 from torch.autograd import Variable
 import numpy as np
@@ -32,23 +31,23 @@ import torch.nn.functional as F
 import random
 import time
 
-PATTERNSIZE = 1000      # Size of the patterns to memorize 
-NBNEUR = PATTERNSIZE    # One neuron per pattern element
-NBPATTERNS = 5          # The number of patterns to learn in each episode
-NBPRESCYCLES = 2        # Number of times each pattern is to be presented
-PRESTIME = 6            # Number of time steps for each presentation
-PRESTIMETEST = 6        # Same thing but for the final test pattern
-INTERPRESDELAY = 4      # Duration of zero-input interval between presentations
+PATTERNSIZE = 1000  # Size of the patterns to memorize
+NBNEUR = PATTERNSIZE  # One neuron per pattern element
+NBPATTERNS = 5  # The number of patterns to learn in each episode
+NBPRESCYCLES = 2  # Number of times each pattern is to be presented
+PRESTIME = 6  # Number of time steps for each presentation
+PRESTIMETEST = 6  # Same thing but for the final test pattern
+INTERPRESDELAY = 4  # Duration of zero-input interval between presentations
 NBSTEPS = NBPRESCYCLES * ((PRESTIME + INTERPRESDELAY) * NBPATTERNS) + PRESTIMETEST  # Total number of steps per episode
 
 
 # Generate the full list of inputs, as well as the target output at last time step, for an episode. 
 def generateInputsAndTarget():
-    inputT = np.zeros((NBSTEPS, 1, NBNEUR)) #inputTensor, initially in numpy format
+    inputT = np.zeros((NBSTEPS, 1, NBNEUR))  # inputTensor, initially in numpy format
     # Create the random patterns to be memorized in an episode
-    patterns=[]
+    patterns = []
     for nump in range(NBPATTERNS):
-        patterns.append(2*np.random.randint(2, size=PATTERNSIZE)-1)
+        patterns.append(2 * np.random.randint(2, size=PATTERNSIZE) - 1)
     # Building the test pattern, partially zero'ed out, that the network will have to complete
     testpattern = random.choice(patterns).copy()
     degradedtestpattern = testpattern * np.random.randint(2, size=PATTERNSIZE)
@@ -57,7 +56,7 @@ def generateInputsAndTarget():
         np.random.shuffle(patterns)
         for ii in range(NBPATTERNS):
             for nn in range(PRESTIME):
-                numi =nc * (NBPATTERNS * (PRESTIME+INTERPRESDELAY)) + ii * (PRESTIME+INTERPRESDELAY) + nn
+                numi = nc * (NBPATTERNS * (PRESTIME + INTERPRESDELAY)) + ii * (PRESTIME + INTERPRESDELAY) + nn
                 inputT[numi][0][:] = patterns[ii][:]
     # Inserting the degraded pattern
     for nn in range(PRESTIMETEST):
@@ -66,49 +65,50 @@ def generateInputsAndTarget():
     target = torch.from_numpy(testpattern.astype(np.float32))
     return inputT, target
 
-total_loss = 0.0; all_losses = []
-nowtime = time.time()
 
+total_loss = 0.0
+all_losses = []
+nowtime = time.time()
 
 # === Actual algorithm ===
 # Note that each column of w and alpha defines the inputs to a single neuron
-w = Variable(.01 * torch.randn(NBNEUR, NBNEUR), requires_grad=True) # Fixed weights
-alpha = Variable(.01 * torch.randn(NBNEUR, NBNEUR), requires_grad=True) # Plasticity coeffs.
+w = Variable(.01 * torch.randn(NBNEUR, NBNEUR), requires_grad=True)  # Fixed weights
+alpha = Variable(.01 * torch.randn(NBNEUR, NBNEUR), requires_grad=True)  # Plasticity coeffs.
 optimizer = torch.optim.Adam([w, alpha], lr=3e-4)
 
 print("Starting episodes...")
-for numiter in range(1000): # Loop over episodes
-    y = Variable(torch.zeros(1, NBNEUR)) # Initialize neuron activations
-    hebb = Variable(torch.zeros(NBNEUR, NBNEUR)) # Initialize Hebbian trace
-    inputs, target = generateInputsAndTarget() # Generate inputs & target for this episode
+for numiter in range(1000):  # Loop over episodes
+    y = Variable(torch.zeros(1, NBNEUR))  # Initialize neuron activations
+    hebb = Variable(torch.zeros(NBNEUR, NBNEUR))  # Initialize Hebbian trace
+    inputs, target = generateInputsAndTarget()  # Generate inputs & target for this episode
     optimizer.zero_grad()
     # Run the episode:
     for numstep in range(NBSTEPS):
-        yout = F.tanh( y.mm(w + torch.mul(alpha, hebb)) +
-                Variable(inputs[numstep], requires_grad=False) )
-        hebb = .99 * hebb + .01 * torch.ger(y[0], yout[0]) # torch.ger = Outer product
+        yout = F.tanh(y.mm(w + torch.mul(alpha, hebb)) +
+                      Variable(inputs[numstep], requires_grad=False))
+        hebb = .99 * hebb + .01 * torch.ger(y[0], yout[0])  # torch.ger = Outer product
         y = yout
     # Episode done, now compute loss, apply backpropagation
     loss = (y[0] - Variable(target, requires_grad=False)).pow(2).sum()
     loss.backward()
     optimizer.step()
 
-# === End of actual algorithm ===
-
+    # === End of actual algorithm ===
 
     # Print statistics
     print_every = 10
-    to = target.cpu().numpy(); yo = y.data.cpu().numpy()[0][:]
-    z = (np.sign(yo) != np.sign(to)); lossnum = np.mean(z)  # Compute error rate
-    total_loss  += lossnum
-    if (numiter+1) % print_every == 0:
-        previoustime = nowtime;  nowtime = time.time()
+    to = target.cpu().numpy()
+    yo = y.data.cpu().numpy()[0][:]
+    z = (np.sign(yo) != np.sign(to))
+    lossnum = np.mean(z)  # Compute error rate
+    total_loss += lossnum
+    if (numiter + 1) % print_every == 0:
+        previoustime = nowtime
+        nowtime = time.time()
         print("Episode", numiter, "=== Time spent on last", print_every, "iters: ", nowtime - previoustime)
-        print(target.cpu().numpy()[-10:])   # Target pattern to be reconstructed
+        print(target.cpu().numpy()[-10:])  # Target pattern to be reconstructed
         print(inputs.cpu().numpy()[numstep][0][-10:])  # Last input (degraded pattern)
-        print(y.data.cpu().numpy()[0][-10:])   # Final output of the network
+        print(y.data.cpu().numpy()[0][-10:])  # Final output of the network
         total_loss /= print_every
         print("Mean error rate over last", print_every, "iters:", total_loss, "\n")
         total_loss = 0
-
-
